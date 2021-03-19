@@ -11,7 +11,7 @@ Your feedback is always welcome.
 * Two modes of operation: Standalone Mode (runs without computer) and Ethernet Mode. To learn more about the modes, check out [this page]().
 * Two CAN Interfaces, supporting logging, bridging and configurable MITM
 * Diagnostic Scanning: Use the CANBadger to **scan for UDS or TP2.0 session**
-* **Security Hijack**: Take over sessions initiated by third party testers using the CANBadger. Then, do whatever you like.
+* **[Security Hijack](https://github.com/NoelscherConsulting/CANBadger-v2-Firmware/wiki/Security-Hijack)**: Take over sessions initiated by third party testers using the CANBadger. Then, do whatever you like.
 * K-Line support: Use the CANBadger to interface with ECUs over K-Line (and, with some modifications, LIN).
 * K-Line KKL support: Use a broad range of third party tools to perform vehicle diagnostics over K-Line, using the CANBadger KKL feature.
 * Network support: Connect multiple CANBadgers over **ethernet**, control them using a computer using the [CANBadger Server](https://github.com/NoelscherConsulting/CANBadger-v2-Server)
