@@ -3,9 +3,9 @@ The CANBadger is a vehicle security analysis platform.
 In this repository, you can find its firmware.
 
 ## I have a CANBadger v2 and would like to flash new firmware:
-Please check out the Instructions in the WikI
+Please check out the Instructions in the [CANBadger's Wiki](https://github.com/NoelscherConsulting/CANBadger-v2-Firmware/wiki)
 
-The Wiki contains some guides on how to set up your CANBadger, as well as some of the functions it supports.
+The [Wiki](https://github.com/NoelscherConsulting/CANBadger-v2-Firmware/wiki) contains some guides on how to set up your CANBadger, as well as some of the functions it supports.
 
 If you're looking for the CANBadger Server, it's located here.
 
