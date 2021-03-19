@@ -8,3 +8,6 @@ Please check out the Instructions in the WikI
 The Wiki contains some guides on how to set up your CANBadger, as well as some of the functions it supports.
 
 If you're looking for the CANBadger Server, it's located here.
+
+
+Currently, the CANBadger Automotive Security Platform is maintained by [Noelscher Consulting GmbH](https://noelscher.com).
