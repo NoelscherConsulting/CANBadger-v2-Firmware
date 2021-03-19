@@ -2,3 +2,4 @@ Debug/*
 !Debug/.gitignore
 Release/*
 *.launch
+*.hg
