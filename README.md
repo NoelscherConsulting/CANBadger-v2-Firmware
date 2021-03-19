@@ -8,7 +8,7 @@ Your mileage may vary, as we can not test all features with all kinds of setups.
 **We take no responsibility for the things you do with this project**.
 Your feedback is always welcome.
 
-* Two modes of operation: Standalone Mode (runs without computer) and Ethernet Mode. To learn more about the modes, check out [this page]().
+* Two modes of operation: Standalone Mode (runs without computer) and Ethernet Mode. To learn more about the modes, check out [this page](https://github.com/NoelscherConsulting/CANBadger-v2-Firmware/wiki/Modes).
 * Two CAN Interfaces, supporting logging, bridging and configurable MITM
 * Diagnostic Scanning: Use the CANBadger to **scan for UDS or TP2.0 session**
 * **[Security Hijack](https://github.com/NoelscherConsulting/CANBadger-v2-Firmware/wiki/Security-Hijack)**: Take over sessions initiated by third party testers using the CANBadger. Then, do whatever you like.
