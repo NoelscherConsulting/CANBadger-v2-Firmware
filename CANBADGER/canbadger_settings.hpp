@@ -37,6 +37,7 @@
 #include "canbadger.h"
 #include "ethernet_message.hpp"
 #include "conversions.h"
+#include "canbadger_settings_constants.h"
 
 
 using namespace std;
@@ -58,13 +59,15 @@ public:
 	void persist();
 
 	// parse file or EEPROM content to set attribute parameters
-	bool parse(char *compact_settings);
+	bool parse(char *unparsed_settings, size_t len);
 
 	// set or get the value of a certain bit in the canbadger status bytes
 	void setStatus(uint8_t statusType, uint8_t value);
 	bool getStatus(uint8_t statusType);
 
 	char* getID();
+
+	char* getIP();
 
 	// set or get the interface speed for CAN, KLINE or SPI
 	// if_ident is 0 for SPI, 1 or 2 for CAN1/CAN2, 3 or 4 for KLINE1/KLINE2
@@ -82,11 +85,14 @@ public:
 	void receiveSettingsPayload(uint8_t *payload, bool save);
 
 	// save the needed information when a connection to the server is made
-	void handleConnect(EthernetMessage *msg, char *remoteAddress);
+	void handleConnect(char *remoteAddress);
+
+	void setDisconnected();
 
 	bool isConnected;
-	char *connectedTo; // receiving server ip
+	char connectedTo[16]; // receiving server ip
 	bool currentActionIsRunning = false;
+	bool useDHCP;
 	CANbadger *cb;
 
 private:
@@ -132,7 +138,8 @@ private:
 	uint32_t KLINE2Speed;
 	uint32_t SPISpeed;
 
-	char* id;
+	char id[CBS_MAX_ID_LEN + 1];
+	char ip[CBS_MAX_IP_LEN + 1];
 
 	uint32_t cpyToOutBuf(const char *data, uint32_t *offset);
 

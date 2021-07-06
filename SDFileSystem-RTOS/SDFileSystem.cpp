@@ -125,8 +125,8 @@ FATFileSystem(name)
 		_spi=spi;
 		_cs=new DigitalOut(cs);
     _cs->write(1);
-    // Set default to 100kHz for initialisation and 20MHz for data transfer
-    _init_sck = 100000;
+    // Set default to 400kHz for initialisation and 20MHz for data transfer
+    _init_sck = 400000;
     _transfer_sck = 12000000;
 }
 
@@ -152,6 +152,8 @@ SDFileSystem::~SDFileSystem()
 #define SDCARD_V2   2
 #define SDCARD_V2HC 3
 
+#define SDCARD_MAX_INIT_RETRY 5
+
 int SDFileSystem::initialise_card() {
     // Set to 100kHz for initialisation, and clock card with cs = 1
     _spi->frequency(_init_sck);
@@ -161,10 +163,21 @@ int SDFileSystem::initialise_card() {
     }
     
     // send CMD0, should return with all zeros except IDLE STATE set (bit 0)
-    if (_cmd(0, 0) != R1_IDLE_STATE) {
-        debug("No disk, or could not put SD card in to SPI idle state\n");
-        return SDCARD_FAIL;
-    }
+	int retval = 0;
+	for(uint32_t r = 0; r < SDCARD_MAX_INIT_RETRY; r++) {
+		retval = _cmd(0, 0);
+		if(retval == R1_IDLE_STATE) {
+			break;
+		} else {
+			wait_ms(50); // wait 50ms
+		}
+	}
+	// if(retval != R1_IDLE_STATE) {
+	// only "no response" makes us quit here, don't give up yet. cmd0 can often return weird stuff
+	// ..let's try the other commands just to check
+	if(retval == 0xFF) {
+		return SDCARD_FAIL;
+	}
     
     // send CMD8 to determine whther it is ver 2.x
     int r = _cmd8();

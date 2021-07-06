@@ -37,7 +37,7 @@ The header has always the same length, and consists of the following:
 -Byte [13] is the length of the data. We should be good as CAN has max 8 bytes of data per frame, and KLINE has a max of 255
 -Following bytes are the data
 */
-
+#include "crc32.h"
 #include "canbadger.h"
 
 //We first create all the objects, and later destroy them if not used
@@ -6682,7 +6682,7 @@ bool CANbadger::sendCANFrame(uint32_t msgID, uint8_t *payload, uint8_t len, uint
 			can2.write(CANMessage(msgID, reinterpret_cast<char*>(payload), len, frameType, frameFormat));
 		}
 	}
-	if(currentMS == (timeout * 10) && timeout != 0)
+	if(currentMS >= (timeout * 10) && timeout != 0)
 	{
 		return false;
 	}
@@ -12629,6 +12629,9 @@ void CANbadger::setLED(uint8_t color)
 
 void CANbadger::blinkLED(uint8_t times, uint8_t color)
 {
+	// remember LED state and restore it once we're done
+	int r_state = RLED.read();
+	int g_state = GLED.read();
 	for(uint8_t a=0;a<times;a++)
 	{
 		setLED(LED_OFF);
@@ -12636,6 +12639,8 @@ void CANbadger::blinkLED(uint8_t times, uint8_t color)
 		setLED(color);
 		wait(0.2);
 	}
+	RLED = r_state;
+	GLED = g_state;
 }
 
 void CANbadger::dumpSerial()
@@ -12672,7 +12677,7 @@ bool CANbadger::setCANSpeed(uint8_t bus, uint32_t speed)
 	if(bus == 1)
 	{
 		if(!can1.frequency(speed)) {return 0;}
-		canbadger_settings->setSpeed(1, speed);
+		//canbadger_settings->setSpeed(1, speed);
 	}
 	else
 	{
@@ -12722,13 +12727,53 @@ void CANbadger::clearEEPROM()
 
 bool CANbadger::writeEEPROM(unsigned int startAdr, unsigned int len, const uint8_t* data)
 {
-	return eeprom.write(startAdr, len, data);
+	// write the value, update the checksum
+	if(eeprom.write(startAdr, len, data)) {
+		// recalcuate checksum
+		uint8_t eeprom_data[EEPROM_CS_OFFS];
+		eeprom.read(0, EEPROM_CS_OFFS, eeprom_data);
+		uint32_t new_checksum = crc_32(eeprom_data, EEPROM_CS_OFFS);
+		// always store msb first
+		uint8_t new_checksum_packed[] = {
+				(new_checksum >> 24) & 0xff,
+				(new_checksum >> 16) & 0xff,
+				(new_checksum >> 8) & 0xff,
+				new_checksum & 0xff
+		};
+		// finally, write the updated checksum
+		bool cs_write = eeprom.write(EEPROM_CS_OFFS, 4, new_checksum_packed);
+		return cs_write && checkEEPROM();
+	}
+	return false;
 }
 
 bool CANbadger::readEEPROM(unsigned int startAdr, unsigned int len, uint8_t* data)
 {
-	eeprom.read(startAdr, len, data);
-	return true;
+	// we first verify the eeprom's checksum
+	// if it doesn't match, we always return 0xFF (eeprom is empty)
+	if(!this->checkEEPROM()) {
+		memset(data, 0xff, len);
+		return false;
+	}
+	return eeprom.read(startAdr, len, data);
+}
+
+bool CANbadger::checkEEPROM() {
+	// returns true if eeprom data is valid
+	// returns false otherwise
+	// first read the whole EEP and calcuate the data's checksum
+	// if the stored checksum matches the data's checksum, we can return true
+	uint32_t stored_checksum;
+	uint8_t eeprom_data[EEPROM_CS_OFFS + 4];
+
+
+	eeprom.read(0, EEPROM_CS_OFFS + 4, eeprom_data);
+	stored_checksum = (eeprom_data[EEPROM_CS_OFFS] << 24) + (eeprom_data[EEPROM_CS_OFFS + 1] << 16) + (eeprom_data[EEPROM_CS_OFFS + 2] << 8) + eeprom_data[EEPROM_CS_OFFS + 3];
+	uint32_t data_checksum = crc_32(eeprom_data, EEPROM_CS_OFFS);
+	if(stored_checksum == data_checksum) {
+		return true;
+	}
+	return false;
 }
 
 void CANbadger::readEEPROMUID(uint8_t* data)
@@ -13426,7 +13471,7 @@ void CANbadger::ethernetLoop() {
 		Thread::yield();
 		ethernet_manager->run();
 
-		osEvent evt = this->commandQueue->get(25);
+		osEvent evt = this->commandQueue->get(1);
 		if(evt.status == osEventMail) {
 			EthernetMessage *msg;
 			msg = 0;
@@ -13494,6 +13539,10 @@ size_t CANbadger::readFile(const char *filename, uint8_t *dst, size_t offset, si
 void CANbadger::removeFileNoninteractive(const char *filename)
 {
 	sd.removeFileNoninteractive(filename);
+}
+
+bool CANbadger::doesFileExist(const char *filename) {
+	return sd.doesFileExist(filename);
 }
 
 size_t CANbadger::writeFile(const char *filename, uint8_t *data, size_t offset, size_t length)

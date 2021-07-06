@@ -39,9 +39,6 @@
 		snprintf(this->deviceIdentifier, 7+strlen(cbName), "CB|%s|%d|",
 				cbName, CB_VERSION);
 		this->idLength = strlen(this->deviceIdentifier);
-		this->dataOutDestPort = 0;
-		sendBroadcast = false;
-		this->broadcastTicker.attach(toggleBroadcast, 2.0);
 		this->commandQueue = commandQueue;
 		this->ramStart = 0;
 		this->ramEnd = 0;
@@ -49,10 +46,21 @@
 
 		//this->debugLog("Initializing ethernet..");
 
-		//eth.init(); //Use DHCP TODO distinguish between DHCP or static mode! (from SD or EEPROM)
-		// set the mac in this hacky way
-		int init_succ = eth.init("10.0.0.125", "255.255.255.0", "0.0.0.0");  // use static ip
-		eth.connect();
+		if (this->canbadgerSettings->useDHCP) {
+			// use DHCP
+			eth.init();
+		} else {
+			// try to use the provided IP from the settings
+			eth.init(this->canbadgerSettings->getIP(), "255.255.255.0", "0.0.0.0");
+		}
+
+		int conn_succ = eth.connect(5000);
+		if (conn_succ != 0) {
+			this->canbadgerSettings->cb->setLED(LED_RED);
+			return;
+		} else {
+			this->canbadgerSettings->cb->setLED(LED_GREEN);
+		}
 
 	#ifdef DEBUG
 		char* adr = eth.getIPAddress();
@@ -60,29 +68,14 @@
 		sprintf(debugMsg, "Initialized ethernet with ip: %s", adr);
 		//this->debugLog(debugMsg);
 	#endif
-//this->em_thread.signal_set(ETHERNET_START_SIG);
+
+		sendBroadcast = false;
+		this->broadcastTicker.attach(toggleBroadcast, 2.0);
 	}
 
 	EthernetManager::~EthernetManager() {
 		//em_thread.terminate();
 		this->eth.disconnect();
-	}
-
-	/*void EthernetManager::mainStarterThread(const void *args) {
-		Thread::signal_wait(ETHERNET_START_SIG);
-		EthernetManager *klass = (EthernetManager*) args;
-		klass->run();
-	}*/
-
-	void EthernetManager::run() {
-		if(sendBroadcast) {
-			broadcast();
-			sendBroadcast = false;
-		}
-
-		handleInbox();
-
-		//handleOutqueue();
 	}
 
 	void EthernetManager::setup() {
@@ -91,40 +84,92 @@
 		this->recvBuffer = new char[130];
 		this->xramSendBuffer = new char[sizeof(EthernetMessage) + 22];
 
-		// setup sockets
-		this->actionSocket.bind(13371);
+		// tcp setup
+		this->actionSocket = TCPSocketConnection();
 		this->actionSocket.set_blocking(false, 1);
+
+
+		// udp setup
+		this->connectionSocket.bind(13371);
+		this->connectionSocket.set_blocking(false, 1);
 		this->broadcastSocket.init();
 		this->broadcastSocket.set_broadcasting(true);
 		this->broadcastEndpoint.set_address("255.255.255.255", 13370);
+
+	}
+
+	void EthernetManager::run() {
+		// send broadcast when the timer has triggered
+		if(sendBroadcast) {
+			broadcast();
+			sendBroadcast = false;
+		}
+
+		// check for incoming commands over tcp
+		if(this->canbadgerSettings->isConnected) {
+			handleInbox();
+			//handleOutqueue();
+		}
+
+		// check CONNECT requests on the udp socket
+		checkForConnectionRequest();
 	}
 
 	void EthernetManager::broadcast() {
 		this->broadcastSocket.sendTo(this->broadcastEndpoint, this->deviceIdentifier, this->idLength);
 	}
 
+	void EthernetManager::checkForConnectionRequest() {
+		int received = connectionSocket.receiveFrom(server, recvBuffer, 2048);
+		char *receivedFrom = server.get_address();
+		if(received > 5) {
+			EthernetMessage *msg = EthernetMessage::unserialize(recvBuffer);
+			switch(msg->type) {
+				case CONNECT:
+				{
+					if(this->canbadgerSettings->isConnected) {
+						// received a new connection request, close old connection
+						actionSocket.close();
+						actionSocket = TCPSocketConnection();
+						this->actionSocket.set_blocking(false, 1);
+					}
+
+					unsigned int port = (msg->data[3] << 24) | (msg->data[2] << 16) | (msg->data[1] << 8) | (msg->data[0]);
+					int connection_result = actionSocket.connect(receivedFrom, port);
+					if(connection_result == 0) {
+						// confirm connection with ACK over Ethernet Message protocol
+						sendACK();
+						//store connection details in settings
+						this->canbadgerSettings->handleConnect(receivedFrom);
+					}
+					break;
+				}
+				case ACTION:
+				default:
+					break;
+			}
+
+			delete msg;
+		}
+	}
+
 	void EthernetManager::handleInbox() {
 		int received;
 
 		// try to receive from action socket
-		received = this->actionSocket.receiveFrom(client, recvBuffer, 2048);
+		received = this->actionSocket.receive(recvBuffer, 2048);
+
 		if(received > 5) {
-			char *remoteAddress = client.get_address();
 			EthernetMessage *msg = EthernetMessage::unserialize(recvBuffer);
-			if(this->canbadgerSettings->isConnected &&
-					(strcmp(this->canbadgerSettings->connectedTo, remoteAddress) == 0)) {
+			if(this->canbadgerSettings->isConnected) {
 				switch(msg->type) {
-					case CONNECT:
-						// send ACK anyway, we are already connected
-						this->canbadgerSettings->handleConnect(msg, remoteAddress);
-						this->dataOutDestPort = (msg->data[3] << 24) | (msg->data[2] << 16) | (msg->data[1] << 8) | (msg->data[0]);
-						this->outputEndpoint.set_address(remoteAddress, this->dataOutDestPort);
-						this->sendACK();
-						delete msg;
-						break;
 					case ACTION:
 						if(msg->actionType == STOP_CURRENT_ACTION)
 							this->canbadgerSettings->currentActionIsRunning = false;
+						if(msg->actionType == RESET) {
+							this->closeConnection();
+							this->canbadgerSettings->setDisconnected();
+						}
 
 						// append to action queue
 						this->commandQueue->put(msg);
@@ -132,16 +177,6 @@
 						break;
 				}
 			} else {
-				// the connect message should contain a port number in DATA
-				// the server will open that port for us so we can send data
-				// so the message looks like this: 4 12345|
-				//                           msgtype port delim
-				if(msg->type == CONNECT) {
-					this->canbadgerSettings->handleConnect(msg, remoteAddress);
-					this->dataOutDestPort = (msg->data[3] << 24) | (msg->data[2] << 16) | (msg->data[1] << 8) | (msg->data[0]);
-					this->outputEndpoint.set_address(remoteAddress, this->dataOutDestPort);
-					this->sendACK();
-				}
 				delete msg;
 			}
 		}
@@ -159,7 +194,7 @@
 				outMsg = (EthernetMessage*) evt.value.p;
 				if(outMsg != 0) {
 					char* msgData = EthernetMessage::serialize(outMsg);
-					this->actionSocket.sendTo(this->outputEndpoint, msgData, 6 + outMsg->dataLength);
+					this->actionSocket.send(msgData, 6 + outMsg->dataLength);
 					if(outMsg->data)
 						delete[] outMsg->data;
 					this->outQueue.free(outMsg); // clean up
@@ -191,7 +226,7 @@
 
 				ram_read(this->ramStart+6, xramSendBuffer+6, dataLength);
 				memcpy(xramSendBuffer, headerBuf, 6);
-				this->actionSocket.sendTo(this->outputEndpoint, xramSendBuffer, 6+dataLength);
+				this->actionSocket.send(xramSendBuffer, 6+dataLength);
 				if(this->ramStart + 6 + dataLength > 0x20000) {
 					// wrap around
 					this->ramStart = 0;
@@ -203,15 +238,20 @@
 		}
 	};
 
+	void EthernetManager::closeConnection() {
+		actionSocket.close();
+		actionSocket = TCPSocketConnection();
+	}
+
 	void EthernetManager::sendACK() {
 		// blindly sends an ack, acquiring and releasing the actionSocket mutex
+		uint8_t serBuf[6];
 		EthernetMessage ack;
 		ack.type = ACK;
 		ack.actionType = NO_TYPE;
 		ack.dataLength = 0;
-		char* msgData = EthernetMessage::serialize(&ack);
-		int error = this->actionSocket.sendTo(this->outputEndpoint, msgData, 6);
-		delete[] msgData;
+		char* msgData = EthernetMessage::serialize(&ack, (char*) serBuf);
+		int error = this->actionSocket.send(msgData, 6);
 	}
 
 	void EthernetManager::sendNACK() {
@@ -221,7 +261,7 @@
 		ack.actionType = NO_TYPE;
 		ack.dataLength = 0;
 		char* msgData = EthernetMessage::serialize(&ack);
-		int error = this->actionSocket.sendTo(this->outputEndpoint, msgData, 6);
+		int error = this->actionSocket.send( msgData, 6);
 		delete[] msgData;
 	}
 
@@ -308,7 +348,7 @@ int EthernetManager::sendMessageBlocking(MessageType type, ActionType atype, cha
 		//char* msgData = EthernetMessage::serialize(msg);
 		char *msgData = EthernetMessage::serialize(&msg, this->xramSerializationBuffer);
 
-		int error = this->actionSocket.sendTo(this->outputEndpoint, msgData, 6 + msg.dataLength);
+		int error = this->actionSocket.send(msgData, 6 + msg.dataLength);
 		//if(msg->data)
 		//	delete[] msg->data;
 		//delete msg;
@@ -325,7 +365,7 @@ int EthernetManager::sendMessagesBlocking(EthernetMessage **messages, size_t num
 		for(unsigned int i = 0; i < numMessages; i++) {
 			EthernetMessage *msg = messages[i];
 			snprintf(packet, 129, "M|%d|%s", msg->type, msg->data);
-			error = this->actionSocket.sendTo(this->outputEndpoint, packet, strlen(packet));
+			error = this->actionSocket.send(packet, strlen(packet));
 			if(error != 0)
 				return -1;
 		}

@@ -1,5 +1,7 @@
-Debug/*
+Debug
 !Debug/.gitignore
-Release/*
+/Release/
 *.launch
-*.hg
+*dirstate*
+.hg*
+.idea

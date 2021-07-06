@@ -161,6 +161,8 @@
 #define CAN1_MONITOR 28
 #define CAN2_MONITOR 29
 
+#define EEPROM_CS_OFFS 160
+
 
 
 static const char fwVersion[9]={'F','W',' ','V','1','.','0','A',0};//fw version string
@@ -313,6 +315,12 @@ class CANbadger
 				*/
 				void clearEEPROM();
 
+				/**
+				 * Verify EEPROM contents.
+				 * @return True, if EEPROM checksum is ok. False in all other cases.
+				 */
+				bool checkEEPROM();
+
 		        /** Writes an array of data to the external EEPROM
 		            @param startAdr is the start address to write to
 					@param len is the total length of the data to be written
@@ -441,6 +449,9 @@ class CANbadger
 				size_t readFile(const char *filename, uint8_t *dst, size_t offset, size_t length);
 
 				void removeFileNoninteractive(const char *filename);
+
+				// returns true if the given file exists, otherwise false
+				bool doesFileExist(const char *filename);
 
 				size_t writeFile(const char *filename, uint8_t *data, size_t offset, size_t length);
 

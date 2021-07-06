@@ -25,7 +25,7 @@
 #ifndef ETHERNET_MANAGER_HPP_
 #define ETHERNET_MANAGER_HPP_
 
-#define DEBUG
+//#define DEBUG
 #define START_THREAD 1
 #define CB_VERSION 2
 #define ETHERNET_START_SIG 1
@@ -93,11 +93,18 @@ public:
 	// send the broadcast including identifier and ip
 	void broadcast();
 
+	// check connectionSocket for incoming CONNECT command
+	void checkForConnectionRequest();
+
 	// check for incoming messages and handle them
 	void handleInbox();
 
 	// check for outgoing messages and send them
 	void handleOutqueue();
+
+	// close TCP connection (and create new socket for next connection)
+	void closeConnection();
+
 
 private:
 	int deviceUid;
@@ -105,15 +112,14 @@ private:
 	CanbadgerSettings *canbadgerSettings;
 	EthernetInterface eth;
 	Ticker broadcastTicker;
-	unsigned int dataOutDestPort;
 	size_t idLength;
 
 	UDPSocket broadcastSocket;
-	UDPSocket actionSocket;
+	UDPSocket connectionSocket;
+	TCPSocketConnection actionSocket;
 
 	Endpoint broadcastEndpoint;
-	Endpoint outputEndpoint;
-	Endpoint client;
+	Endpoint server;
 
 	Mail<EthernetMessage, 16> outQueue;
 	Mail<EthernetMessage, 16> *commandQueue;

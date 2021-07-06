@@ -34,7 +34,7 @@ int main()
 	//setting up the EthernetManager
 	CANbadger canbadger;
 
-	//canbadger.test(); //enable this to run test routine instead of main code
+	canbadger.test(); //enable this to run test routine instead of main code
 
 	canbadger.readEEPROMUID((uint8_t*) cbMac); // we get exactly 6 bytes
 	cbMac[0]=0x00;
@@ -46,7 +46,7 @@ int main()
 		// start in Ethernet mode
 		Mail<EthernetMessage, 16> commandQueue = Mail<EthernetMessage, 16>();
 		canbadger.setCommandQueue(&commandQueue);
-		EthernetManager ethernet_manager = EthernetManager(1, cb_settings, &commandQueue);
+		EthernetManager ethernet_manager(1, cb_settings, &commandQueue);
 		ethernet_manager.setup();
 		canbadger.setEthernetManager(&ethernet_manager);
 		canbadger.ethernetLoop();

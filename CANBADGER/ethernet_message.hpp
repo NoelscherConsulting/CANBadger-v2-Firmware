@@ -97,7 +97,7 @@ public:
 	bool heapUse = false; //
 
 	// will parse ethernetMessage to wire format
-	static char* serialize(EthernetMessage* msg, char* buf = 0);
+	static char* serialize(EthernetMessage* msg, char* buf = NULL);
 	// will parse an ethernet message from a datagram / binary data
 	static EthernetMessage* unserialize(char* data);
 

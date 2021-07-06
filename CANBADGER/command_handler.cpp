@@ -27,6 +27,7 @@
  */
 
 #include "command_handler.hpp"
+#include "canbadger_settings_constants.h"
 
 bool handleEthernetMessage(EthernetMessage *msg, CANbadger *canbadger)
 {
@@ -44,13 +45,13 @@ bool handleEthernetMessage(EthernetMessage *msg, CANbadger *canbadger)
 		case SETTINGS:
 			if(msg->dataLength == 0) {
 				// if the message holds no data, its a request to send the current settings
-				uint8_t data[50] = {0};
+				uint8_t data[CBS_COMP_SETT_BUFF_SIZE] = {0};
 				size_t data_len = settings->getSettingsPayload(data);
 				ethMan->sendMessageBlocking(DATA, SETTINGS, (char*)data, data_len);
 			} else {
 				// if the message holds data, then we update our settings accordingly
 				// check if the payload has the correct length, and id is not too long
-				if(msg->dataLength == (uint32_t)msg->data[0] + 25 && msg->data[0] <= 18 ) {
+				if(msg->dataLength <= CBS_MAX_ID_LEN + CBS_MAX_IP_LEN + 26 && msg->data[0] <= 18 ) {
 					settings->receiveSettingsPayload((uint8_t*)msg->data, true);
 				} else {
 					ethMan->sendNACK();
@@ -329,7 +330,12 @@ bool handleEthernetMessage(EthernetMessage *msg, CANbadger *canbadger)
 			payload_length = (msg->dataLength) - 5;
 			memcpy(payload, (msg->data) + 5, payload_length);
 
-			bool result = canbadger->sendCANFrame(frame_id, payload, payload_length, interface, CANStandard, CANData, 0);
+			CANFormat format = CANStandard;
+			if((frame_id & 0x80000000) != 0) {
+				// is extended ID
+				format = CANExtended;
+			}
+			bool result = canbadger->sendCANFrame(frame_id, payload, payload_length, interface, format, CANData, 1000);
 
 			if(result) {
 				ethMan->sendACK();
@@ -488,8 +494,11 @@ bool canLogging(CANbadger *canbadger, bool enableBridgeMode)
 				// valid messages are: STOP_CURRENT_ACTION, START_REPLAY, RESET, RELAY, LED
 				switch(msg->actionType)
 				{
-					case STOP_CURRENT_ACTION:
+
 					case RESET:
+						// close tcp connection before calling the handler again
+						ethManager->closeConnection();
+					case STOP_CURRENT_ACTION:
 					case RELAY:
 					case LED:
 						handleEthernetMessage(msg, canbadger);
@@ -497,61 +506,7 @@ bool canLogging(CANbadger *canbadger, bool enableBridgeMode)
 					case START_REPLAY:  // REPLAY needs special handling because logging is currently active
 					{
 						// send the message out of the given interface
-						uint32_t frame_id;
-						uint8_t interface;
-						uint8_t payload_length;
-						uint8_t payload[8];
-						memcpy(&interface, msg->data, 1);
-						frame_id = parse32(msg->data, 1, "LE");
-						payload_length = (msg->dataLength) - 5;
-						memcpy(payload, (msg->data) + 5, payload_length);
-
-						// if the interface is invalid or the corresponding interface is not supposed to be used -> break
-						if(!(interface == 1 || interface == 2)) {
-							break;
-						} else if(interface == 1 && !canbadger->getCANBadgerStatus(CAN1_LOGGING)) {
-							break;
-						} else if(interface == 2 && !canbadger->getCANBadgerStatus(CAN2_LOGGING)) {
-							break;
-						}
-
-						// send the received frame
-						bool result = canbadger->sendCANFrame(frame_id, payload, payload_length, interface, CANStandard, CANData, 0);
-
-						if(result) {
-							//send a DATA message back to the server, containing the log information for the message sent
-
-							// interface and format
-							(interface == 1) ? data[0] = 21 : data[0] = 22;
-
-							// timestamp
-							uint32_t us = timer->read_ms();
-							data[1] = (us >> 24) & 0xFF;
-							data[2] = (us >> 16) & 0xFF;
-							data[3] = (us >> 8) & 0xFF;
-							data[4] = us & 0xFF;
-
-							// id
-							data[5] = msg->data[4];
-							data[6] = msg->data[3];
-							data[7] = msg->data[2];
-							data[8] = msg->data[1];
-
-							// speed
-							CanbadgerSettings *settings = canbadger->getCanbadgerSettings();
-							uint32_t temp_speed = settings->getSpeed(interface);
-							data[9]=(temp_speed >> 24)  & 0xFF;
-							data[10]=(temp_speed >> 16)  & 0xFF;
-							data[11]=(temp_speed >> 8)  & 0xFF;
-							data[12]=temp_speed & 0xFF;
-
-							data[13] = 	payload_length;
-							memcpy(data + 14, (msg->data) + 5, payload_length);
-
-							ethManager->sendMessageBlocking(DATA, NO_TYPE, (char*)data, payload_length + 14);
-							frmCount++;
-						}
-
+						handleEthernetMessage(msg, canbadger);
 						break;
 					}
 					default:
@@ -988,8 +943,8 @@ size_t parseDirContents(CANbadger *canbadger, char *contentBuffer, char *lookupD
 
 void writeFilenameToEEPROM(CANbadger *canbadger, uint8_t length, char *filename) {
 	uint8_t *lpnt = &length;
-	canbadger->writeEEPROM(50, 1, lpnt);
-	canbadger->writeEEPROM(51, length, (uint8_t*) filename);
+	canbadger->writeEEPROM(CBS_COMP_SETT_BUFF_SIZE, 1, lpnt);
+	canbadger->writeEEPROM(CBS_COMP_SETT_BUFF_SIZE + 1, length, (uint8_t*) filename);
 }
 
 //helper to parse uint32_t's from buffer, for e.g. message argument parsing
