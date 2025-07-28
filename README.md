@@ -1,6 +1,6 @@
 # CANBadger v2 Firmware
 The CANBadger is a vehicle security analysis platform.
-In this repository, you can find its firmware.
+In this repository, you can find its firmware. You can find the hardware [here](https://github.com/NoelscherConsulting/CANBadger-v2-Hardware).
 
 ![](https://raw.githubusercontent.com/wiki/NoelscherConsulting/CANBadger-v2-Firmware/img/cb_pic1.jpg)
 
